@@ -1,0 +1,334 @@
+---
+title: "Time series modeling and forecasting of gold price"
+author: "Ilaria Ferrero, Fabiana Pagliuca, Chiara Sangalli"
+date: "2024-02-13"
+output:
+  pdf_document:
+    fig_height: 4
+    fig_width: 7
+    toc: true
+---
+
+```{r include=FALSE}
+library(readxl)
+library(knitr)
+library(TSA)
+library(forecast)
+library(tseries)
+```
+
+# Introduction
+
+In this report, we delve into the analysis of monthly gold price data. Gold has always attracted significant interest as a safe-haven asset and a barometer of economic stability. By examining historical price data, we aim to uncover trends, seasonal fluctuations, and potential anomalies that shape the gold market; moreover we will determine what SARIMA model best fits the data we collected and we will predict, using the previously estimated model, the future average monthly gold price.
+
+We obtained our dataset from DataHub.io ([here you can find the link](https://datahub.io/core/gold-prices#resource-monthly)) and we decided to focus on monthly average gold prices spanning a period of 20 years. The dataset comprehends observations from January 2000 to July 2020, for a total of 247 data points. *Figure 1* showcases the time plot of the gold price series: by observing it it's clear that the series is not stationary, because the mean is increasing over time, following an upward trend.
+
+```{r}
+df <- read_excel("C:/Users/Lucia/Desktop/times series/monthly_csv.xls")
+df_ts<- ts(df$Price,start=c(2000,1),frequency=12)
+```
+
+```{r echo=FALSE, fig.cap="Time Plot of gold price", fig.align='center'}
+plot(df_ts, main = "Monthly gold price from 2000 to 2020", ylab = "Price", lwd = 2, col = "gold")
+```
+
+# Preliminary Analysis
+
+From the plot in *Figure 1* it appears clearly that the series is not stationary; this assumption is confirmed by the Augmented Dickey-Fuller test, that tests the null hypothesis that the time series has a unit root; the alternative hypothesis is that the series is stationary. In this case the test retrieves a **p-value** of $0.667$, leading us to conclude that the series is non stationary.
+
+```{r}
+# test to check the stationrity of the series:
+adf.test(df_ts)
+```
+
+*Figure 2* showcases a decomposition of the gold price data by breaking the series into four components. From top to bottom, the *observed* section shows the original gold price data; the *trend* component shows there was a general increase of the gold price over the period taken into consideration: more specifically, the price had been growing from 2000 to 2013, when it started to decrease briefly, remained constant for a while and eventually begun growing again; the last observed price, in July 2020 is the highest number registered in our series, meaning that the growth in the last period has surpassed the previous peak price registered in September 2011. The *seasonal* part of the decomposition shows a seasonal pattern, consisting of a regular rise and fall every year. The *random* component of the decomposition proves one again that the series is not a stationary process.
+
+```{r echo=FALSE, fig.cap="Time series decomposition", fig.align='center'}
+goldprice_timeseriescomponents <- decompose(df_ts)
+plot(goldprice_timeseriescomponents)
+```
+
+The last graphical evidence of the series's non stationarity is offered by the ACF and PACF plots, displayed in *figure 3*: as the we can see the auto correlations are way above the dotted threshold present in the plot, meaning that autocorrelations between observations are very high at every lag; on the contrary, the plot of the partial autocorrelation function shows that only the first value, corresponding to lag 0, is significant while the others are below the threshold: this suggests that there might be a first-order autocorrelation effect in the time series. In other words, there could be a direct dependency between an observation and the immediately succeeding one.
+
+```{r echo=FALSE, fig.align='center', fig.cap="ACF and PACF plots of the original series"}
+par(mfrow = c(1,2))
+acf(df_ts, main = "ACF plot", lag = 12)
+pacf(df_ts, main = "PACF plot", lag= 12)
+```
+
+## First-order difference
+
+To transform our series in a stationary one, we can apply firstly a **first-order difference**: this means subtracting to each value in our series its previous one. The resulting series is displayed in *figure 4*: as we can see, the series does not have a constant mean over time and thus is not stationary in terms of the mean.
+
+```{r}
+#Compute the first-order difference 
+diff_ts <- diff(df_ts, lag = 12)
+```
+
+```{r echo=FALSE, fig.align='center', fig.cap = "Gold price series and ACF after differencing"}
+par(mfrow= c(1,2))
+plot(diff_ts, main = "Time series after differencing", ylab = "Price", col = "gold", lwd = 2)
+abline(h=mean(diff_ts), col = "gold4", lwd = 1.5)
+acf(diff_ts, main= "ACF after differencing", lag = 12)
+```
+
+*Figure 4* illustrates also the ACF plot with the first differencing on our time series, revealing autocorrelations that decrease slowly. When autocorrelations decrease slowly, it implies that successive observations in the series are still somewhat dependent on each other, violating the assumption of **stationarity**. Therefore, another differencing may be necessary to eliminate the residual autocorrelation and achieve stationarity.
+
+The non-stationarity of this new series is confirmed by the high *p-value* of the **Dickey-Fuller test**, which leads us to accept the null hypothesis of non-stationarity.
+
+```{r warning=FALSE}
+adf.test(diff_ts)
+```
+
+## Second-order difference
+
+Now, we performs a second differencing operation on the time series using a lag of 12 month. *Figure 4* shows that the series does not have a constant mean over time and thus is not stationary in terms of the mean: since our monthly dataset disoplayed a seasonal structure, we decided to apply a **seasonal difference of the first-order** with a lag of 12 months.
+
+```{r}
+# Compute the seasonal difference
+seasonal_diff <- diff(diff_ts, lag = 12)
+```
+
+```{r echo=FALSE, fig.align='center', fig.cap = "Time series of Seasonal Differenced Data"}
+plot(seasonal_diff, col= "gold", main= "Time series of Seasonal Differenced Data", lwd=2)
+abline(h=mean(seasonal_diff), col = "gold4", lwd = 1.5)
+```
+
+The **Augmented Dickey-Fuller** test performed on the seasonally differenced dataset shows a test statistic value of -4.8688, indicating a high degree of stationarity in the data. The associated p-value is $0.01$, suggesting strong evidence against the null hypothesis of non-stationarity. Therefore, based on this test result, we can confidently conclude that the seasonally differenced dataset is stationary.
+
+```{r warning=FALSE}
+adf.test(seasonal_diff)
+```
+
+To support this conclusion, we can observe the **ACF** and the **PACF** plots of the seasonally differenced series in *Figure 6*. Looking at the seasonal peaks in the ACF plot, we can see that there is a high peak at lag 0, while at the subsequent seasonal lag the value is not equally high. As for the PACF plot, it is evident that there are two significant peaks at the seasonal lags. Regarding the non-seasonal lags, autocorrelation values are relevant for the first 6 lags, while partial autocorrelations are alway negilible. These observations will guide us in the choiche of the our SARIMA model's parameters **p, q, P** and **Q.**
+
+```{r echo=FALSE, fig.align='center', fig.cap="ACF of seasonally differenced data"}
+par(mfrow= c(1,2))
+acf(seasonal_diff, lag = 24, main = "ACF")
+pacf(seasonal_diff, lag = 24, main = "PACF")
+```
+
+# SARIMA
+
+## Model selection and fitting
+
+To effectively capture the patterns present in our observed time series, we will employ a **seasonal Autoregressive Integrated Moving Average** (**ARIMA**) model. Seasonal ARIMA models are well-suited for analyzing data exhibiting recurring patterns or seasonal fluctuations over time. By incorporating both autoregressive and moving average components along with differencing operations to stabilize non-stationary data, this approach enables us to model and forecast the seasonal behavior present in our time series.
+
+As previously observed, applying first-order differencing and seasonal first-order differencing effectively transforms our non-stationary series into a stationary one; for this reason we will fix both differencing parameters **d** and **D** equal to $1$.
+
+```{r}
+# fixed values for d and D
+d <- 1
+D <- 1
+```
+
+Regarding the seasonal parameters P and Q, we can conclude the following: given the two significant peaks in the PACF plot, we will choose $P=2$, while considering the ambiguity of the ACF plot, we will have to decide whether the most appropriate value for Q will be 1 or 2. Moving on to the non-seasonal parameters, from the PACF plot, it is clear that $p=0$, while once again we will need to determine the best value for q.
+
+The seasonal period **s** of $12$ is chosen to reflect the seasonality observed in *figure 2*, that suggests that there are seasonal effects that occur on a yearly basis.
+
+```{r}
+# possible values for our parameters
+p <- 0
+q <- 0:5
+P <- 2
+Q <- 1:2
+
+# seasonality
+s <- 12 
+```
+
+To test all the possible models, we will create a grid containing all the possible combination of values:
+
+```{r}
+# grid of parameter combinations
+param_grid <- expand.grid(p = p, d = d, q = q, P = P, D = D, Q = Q)
+
+# matrix to store results in
+results_1 <- matrix(NA, nrow = nrow(param_grid), ncol = 2)
+colnames(results_1) <- c("AIC", "BIC")
+```
+
+To determine the best model we will rely on two different indicators, the **Akaike Information Criterion** (AIC) and the **Bayesian Information Criterion** (BIC): both these criteria balance the goodness of fit of the model with the complexity of the model, penalizing overly complex models to prevent overfitting.
+
+More specifically, the AIC can be computed as follows:
+
+$$AIC = 2H - 2\:ln(\mathcal{L})$$ where H indicates the number of parameters in the model and $\mathcal{L}$ is the likelihood function, of which we take the logarithmic form.
+
+The BIC is given by:
+
+$$BIC = H\:ln(n) - 2\:ln(\mathcal{L}) $$ In both cases, the best model is the one for which these quantities are smaller; for $n > 8$, the penalty introduced by the BIC ($H\:ln(n)$) is bigger than the one introduced by the AIC: for this reason the BIC is said to be more conservative than the AIC.
+
+```{r}
+# iterate through all the possible parameter combinations
+for (i in 1:nrow(param_grid)) {
+  
+  # SARIMA model 
+  model <- Arima(df_ts, 
+                 order = c(p, d, param_grid$q[i]),
+                 seasonal = list(order = c(P, D,
+                 param_grid$Q[i]), period = s))
+  
+  # AIC and BIC for the model
+  aic <- AIC(model)
+  bic <- BIC(model)
+  
+  # store results 
+  results_1[i, 1] <- aic
+  results_1[i, 2] <- bic
+}
+
+results_1 <- cbind(param_grid, results_1)
+```
+
+The AIC and the BIC obtained by every model are displayed in *table 1*: the next step is to select the best model, that will be the one with the lowest AIC and BIC.
+
+```{r}
+kable(results_1, caption = "AIC and BIC for every possible combination of parameters")
+```
+
+```{r}
+# best model AIC
+model_AIC_id <- which.min(results_1$AIC)
+model_AIC <- results_1[model_AIC_id, 1:6]
+model_AIC
+```
+
+```{r}
+# best model BIC
+model_BIC_id <- which.min(results_1$BIC)
+model_BIC <- results_1[model_BIC_id, 1:6]
+model_BIC
+```
+
+According to both critera, the best model has $q=1$ and $Q=1$, so our final model will be a seasonal **ARIMA(0,1,1)(2,1,1)[12]**: it incorporates both seasonal and non-seasonal differencing of order 1, a moving average term of order 1 (**MA(1)**), a seasonal autoregressive term of order 2 (**SAR(2)**) and a seasonal moving average term of order 1 (**SMA(1)**).
+
+```{r}
+mod_1 <- Arima(df_ts, 
+                 order = c(0,1,1),
+                 seasonal = list(order = c(2,1,1), period = s))
+summary(mod_1)
+```
+
+## Diagnostics
+
+Once the model is fitted, we can conduct diagnostic checks on the fitted model to evaluate its adequacy: we will focus on residual analysis to assess whether the underlying assumptions of normality and independence holds; in other words we will study the residuals behavior to ensure that they follow a Gaussian distribution and exhibit no systematic patterns.
+
+```{r echo=FALSE, fig.align='center',, fig.cap = "Plot of residuals against time"}
+plot(mod_1$residuals, main = "Residuals plot", ylab = "Residuals", col = "plum1", lwd = 2)
+abline(h = 0, col = "plum4", lwd = 2)
+```
+
+The plot of residuals against time represented in *figure 7* shows how our model's residuals move around 0 but with non-constant variance: the variance's increase appears clearly after 2005 and reaches its peak around 2012; moreover, a slight upward trend is clearly visible after 2020.
+
+To test normality we will rely on both the Shapiro test and different graphical tools: The Shapiro test is used to assess whether a sample of data comes from a normally distributed population: its null hypothesis is that the data are normally distributed, so if the p-value associated with the test statistic is lower than the significance level 0.05, then the null hypothesis is rejected, suggesting that the data do not follow a normal distribution.
+
+In this case, the low p-value obtained form the test and the plots in *figure 8* lead us to conclude that residuals are not normally distributed.
+
+```{r}
+shapiro.test(mod_1$residuals)
+```
+
+```{r echo=FALSE, fig.align='center', fig.cap = "Histogram, QQ-plot, and boxplot to chech for residuals' normality"}
+
+x <- rnorm(247, 0, 1)
+par(mfrow = c(1,3))
+hist(mod_1$residuals, main= "", freq = F, col = "plum1", border = "plum1", xlab = "Histogram")
+curve(dnorm(x, mean(mod_1$residuals), sd(mod_1$residuals)), add = T, col = "plum4", lwd = 2)
+mtext("Diagnostics for the ARIMA(0,1,1)(2,1,1)[12]", outer = T, line = -2)
+qqnorm(mod_1$residuals, main = "", col = "plum1", xlab = "QQ-plot" )
+qqline(mod_1$residuals, col = "plum4", lwd = 2)
+boxplot(mod_1$residuals, main = "", col = "plum1", border = "plum4", xlab = "Boxplot")
+```
+
+A possible way to solve the non-normality issue is to apply the logarithmic transformation to the time series before fitting the model:
+
+```{r}
+mod_2 <- Arima(log(df_ts), 
+                 order = c(0,1,1),
+                 seasonal = list(order = c(2,1,1), period = s))
+```
+
+After the logarithmic transformation is applied, the plot showcasing residuals against time (*figure 9*) no longer presents the eteroschedasticity issue that was previously observed; the p-value of the Shapiro test being higher then 0.05 as well as the graphical representation of residuals' distribution in *figure 10* lead us to conclude that the model's residuals follows a Normal distribution. To sum up, the logarithmic transformation we applied managed to resolve both the eteroschedasticity and the non-normality issues.
+
+```{r echo=FALSE, fig.align='center', fig.cap = "Plot of residuals against timme after the logarithmic transformation"}
+plot(mod_2$residuals, main = "Residuals plot after log tranformation", ylab = "Residuals", col = "plum1", lwd = 2)
+abline(h = 0, col = "plum4", lwd = 2)
+```
+
+```{r}
+shapiro.test(mod_2$residuals)
+```
+
+```{r echo=FALSE, fig.align='center', fig.cap = "Histogram, QQ-plot, and boxplot to assess the normality of residuals after applying the log transformation"}
+x <- rnorm(247, 0, 1)
+par(mfrow = c(1,3))
+hist(mod_2$residuals, main= "", xlab = "Histogram", freq = F, col = "plum1", border = "plum1")
+curve(dnorm(x, mean(mod_2$residuals), sd(mod_2$residuals)), add = T, col = "plum4", lwd = 2)
+mtext("Diagnostics for the ARIMA(0,1,1)(2,1,1)[12] after log transformation", outer = T, line = -2)
+qqnorm(mod_2$residuals, main = "", xlab = "QQ-plot", col = "plum1" )
+qqline(mod_2$residuals, col = "plum4", lwd = 2)
+boxplot(mod_2$residuals, main = "", col = "plum1", border = "plum4", xlab = "Boxplot")
+```
+
+Finally, we need to assess the independence of the residuals. *Figure 11* displays the autocorrelations of the residuals from our model, which are negligible at all lags. This indicates that our residuals meet the independence assumption, because there is no systematic relationship between the residuals at different time points.
+
+```{r echo=FALSE, fig.align='center', fig.cap= "ACF of residuals"}
+acf(mod_2$residuals, main = "ACF of residuals")
+```
+
+We can finally fit the ARMA(0,1,1)(2,1,1)[12] with the logarithmic transformation:
+
+```{r}
+summary(mod_2)
+```
+
+## Forecasts
+
+After fitting our SARIMA model on the historical time series data, the goal is to use this model to predict the values of the gold price at future points. So, in this step our aim is predicting future values based on past observations and historical patterns. We start with creating a training subset, that we can use to train our forecasting model.
+
+```{r}
+train_ts <- window(df_ts, end=c(2019,07))
+```
+
+The `window()` function is used to subset the time series. In this context, it's creating a training subset (train_ts) that includes all observations up to June 2019. We decided to keep the entire series up to 2019, excluding the last year and reserving it for testing or validation purposes: this is because we will predict the last year based on the data up to 2019 so that we can compare the predicted data with the real data.
+
+In the following code, a SARIMA(0,1,1)(2,1,1)[12] model is fitted on the logarithmically transformed training data (train_ts), excluding the last 12 values. The subsequent 12-month ahead predictions are made.
+
+```{r}
+# Fit SARIMA model excluding the last 12 values
+mod_3 <- Arima(log(train_ts), 
+                 order = c(0, 1, 1),
+                 seasonal = list(order = c(2, 1,
+                 1), period = s))
+
+# Make 12-month ahead predictions
+pred <- forecast(mod_3, h = 12)
+```
+
+We plot the predicted values along with the corresponding true values in *figure 12*:
+
+```{r echo=FALSE, fig.align='center',fig.cap = "Forecasts from ARIMA (0,1,1)(0,1,1)[12]"}
+test_ts <- window(df_ts, start = c(2019, 08))
+plot(pred$mean, ylim = c(13.6, max(log(test_ts))), xlim = c(2019, 2020.5), lwd = 2, col = "deepskyblue2", type = "l", ylab = "", main ="Comparison between predicted and true values")
+lines(log(df_ts), col = "gold", lwd = 2)
+lines(log(test_ts), col = "blue", lwd = 2)
+lines(pred$lower[,1], col = "darkgrey", lwd = 1)
+lines(pred$upper[,1], col = "darkgray", lwd = 1)
+legend("bottomright", legend = c("Forecasts", "True values", "Past values", "80% confidence intervals"), col = c("deepskyblue2", "blue", "gold", "gray"), lty = c(1,1), lwd = c(2,2), cex = 0.5)
+```
+
+The light blue line represents the 12-month predictions generated by the model. These predictions indicate the model's estimate for future values of the time series based on the training data. The blue line represents the actual values of the time series: these are the real data that the model hasn't seen during training and were excluded from the training period to evaluate the predictive capability of the model. The forecast lines (light blue) closely follow the real values (blue), so the model is making accurate predictions. The gray lines represents 80% confidence intervals.
+
+Finally we can predict future values for the next 4 years: the predictions are displayed in *figure 13* and we can see that they reflect the upward trend that our series showcased in the last period, but with a smaller steapness.
+
+```{r echo=FALSE, fig.align='center',fig.cap="Predictions for future values"}
+pred_4 <- forecast(mod_2, h = 48)
+plot(pred_4, main = "4 year forecasts", col = "gold", lwd = 1.5)
+legend("bottomright", legend = c("Forecasts", "Past values"), col = c("deepskyblue2", "gold"), lty = c(1,1), lwd = c(2,2), cex = 0.7)
+```
+
+# Conclusions
+
+The model that fits better the monthly gold prices is a seasonal **ARIMA(0,1,1)(2,1,1)[12]**: we have reached this result by examining the ACF and PACF plots of our differenced series and comparing various models with different parameter sets.
+
+The model we fitted takes into account both the trend and seasonality in the time series data; in order to respect the normality and independence assumptions we transformed our series by applying the logarithmic transformation and we were able to predict future gold price values.
