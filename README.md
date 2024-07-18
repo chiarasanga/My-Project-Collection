@@ -3,6 +3,10 @@ This repository houses a compilation of diverse projects that I've worked on dur
 
 Here's a quick overview of what you can find in this repository:
 
+**Human Action Recognition**: In this project for the Deep Learning for AI class, I implemented ResNet18 and VGG16 convolutional neural networks to classify human actions. I fine-tuned the models using PyTorch and evaluated their performance monitoring accuracy and loss function. The major challenge was preventing overfitting during fine-tuning. To address this, I employed various regularization techniques, such as dropout and data augmentation.
+
+**Time series modeling and forecasting of gold price**: Gold, a well-known safe-haven investment and economic indicator, is under scrutiny. I have analyzed historical data to identify trends, seasonal variations, and potential outliers impacting the gold market. Additionally, I have determined the most suitable SARIMA model for the data and use it to forecast future average monthly gold prices.
+
 **ANN for Image classification**: This project served as the culmination of a Statistical Learning course undertaken during my exchange period in Sweden. My teammate and I opted to address a multi-class classification challenge by implementing various neural networks. Specifically, we developed an Artificial Neural Network (ANN) featuring dropout layers and a Convolutional Neural Network (CNN). Our investigation focused on analyzing the patterns of loss and accuracy curves.
 
 **Metropolis-Hastings and Hamiltonian Monte Carlo**: In our collaborative project, my colleagues and I delved into the computational aspects of two Markov Chain Monte Carlo (MCMC) algorithms: the Metropolis-Hastings algorithm (MH) and the Hamiltonian Monte Carlo (HMC). Our objective was to analyze the computational aspects of these algorithms and highlight their differences. Subsequently, we implemented both algorithms on a common distribution to observe and compare their respective behaviors. For the HMC implementation, we utilized the STAN package.
